@@ -78,16 +78,17 @@ src/term_structure/
     notify.py       # post chart/animation/label to Discord #journalclub
 data/
     raw/            # reserved, currently unused
-    processed/      # pull_curve()'s parquet cache, one file per as_of date, gitignored
+    processed/      # pull_curve()/pull_curve_long_history()'s parquet caches, gitignored
 outputs/            # regime_chart.png, curve_animation.gif, label.txt, gitignored
 notebooks/          # phase0_spike.py -- disposable yfinance validation script
 tests/
     test_data.py    # roll-date / expiry / contract_symbols logic
     test_metrics.py # slope / roll yield / regime math
-pull_test.py        # standalone: just pull and print the curve
-metrics_test.py     # standalone: pull + print slope/roll yield/regime
-post_to_discord.py  # standalone: post the latest outputs to Discord (run manually)
-.env.example        # template for the required DISCORD_WEBHOOK_URL
+pull_test.py               # standalone: just pull and print the curve
+pull_long_history_test.py  # standalone: pull ~8yr history, one batched call
+metrics_test.py            # standalone: pull + print slope/roll yield/regime
+post_to_discord.py         # standalone: post the latest outputs to Discord (run manually)
+.env.example                # template for the required DISCORD_WEBHOOK_URL
 ```
 
 ## Setup
@@ -113,6 +114,16 @@ python pull_test.py
 **Data + slope/roll yield/regime**, printed to the terminal, no charts:
 ```bash
 python metrics_test.py
+```
+
+**Full available history (~8 years) for today's front-6 contracts**, one
+batched multi-ticker call instead of six separate ones. Caveat: early years
+reflect these same contracts when they were deeply deferred from delivery,
+so spreads are naturally flat and not a meaningful regime signal that far
+back -- useful for eyeballing long-run price levels only. See
+`data.pull_curve_long_history()` docstring.
+```bash
+python pull_long_history_test.py
 ```
 
 **Post the latest outputs to Discord** (requires `DISCORD_WEBHOOK_URL` set

@@ -128,6 +128,60 @@ def pull_curve(as_of: pd.Timestamp | None = None, use_cache: bool = True) -> pd.
     return curve
 
 
+def pull_curve_long_history(as_of: pd.Timestamp | None = None, use_cache: bool = True) -> pd.DataFrame:
+    """Full available history for today's front-6 contracts, batched in one
+    call instead of 6 separate ones (faster, and Yahoo happens to retain a
+    currently-listed contract's full history back to when it was first
+    listed -- often ~8 years, far more than LOOKBACK_DAYS).
+
+    Same fixed-identity limitation as pull_curve(), but far more pronounced:
+    the early years reflect these same 6 contracts when they were extremely
+    deep-deferred (years from delivery), so spreads are naturally flat and
+    NOT a meaningful contango/backwardation signal that far back. Useful for
+    eyeballing long-run price levels; not a substitute for real historical
+    regime data. See README "Known Limitations".
+    """
+    if as_of is None:
+        as_of = pd.Timestamp.today().normalize()
+    else:
+        as_of = pd.Timestamp(as_of)
+
+    cache_path = DATA_PROCESSED / f"curve_long_{as_of.date()}.parquet"
+    if use_cache and cache_path.exists():
+        return pd.read_parquet(cache_path)
+
+    symbols = contract_symbols(as_of, N_CONTRACTS)
+    df = yf.download(symbols, period="max", progress=False, group_by="ticker")
+
+    series = {}
+    missing = []
+    for i, symbol in enumerate(symbols, start=1):
+        if symbol not in df.columns.get_level_values(0):
+            missing.append(symbol)
+            continue
+        close = df[symbol]["Close"].dropna()
+        if close.empty:
+            missing.append(symbol)
+            continue
+        series[f"CL{i}"] = close
+
+    if missing:
+        raise RuntimeError(
+            f"pull_curve_long_history(as_of={as_of.date()}) failed: "
+            f"{missing} returned no data."
+        )
+
+    curve = pd.DataFrame(series)
+    curve.index.name = "date"
+    curve = curve.dropna(how="any")
+
+    if use_cache:
+        DATA_PROCESSED.mkdir(parents=True, exist_ok=True)
+        curve.to_parquet(cache_path)
+
+    return curve
+
+
 def pull_generic_curve(as_of: pd.Timestamp | None = None) -> pd.DataFrame:
     """Build the rolling/generic CL1..CL6 panel.
 
