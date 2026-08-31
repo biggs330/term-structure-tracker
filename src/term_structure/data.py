@@ -15,7 +15,13 @@ from pathlib import Path
 import pandas as pd
 import yfinance as yf
 
-from .config import DATA_PROCESSED, LOOKBACK_DAYS, MONTH_CODES, N_CONTRACTS
+from .config import (
+    DATA_PROCESSED,
+    INDUSTRY_LOOKBACK_YEARS,
+    LOOKBACK_DAYS,
+    MONTH_CODES,
+    N_CONTRACTS,
+)
 
 
 def _expiry(year: int, month: int) -> pd.Timestamp:
@@ -180,6 +186,27 @@ def pull_curve_long_history(as_of: pd.Timestamp | None = None, use_cache: bool =
         curve.to_parquet(cache_path)
 
     return curve
+
+
+def pull_curve_industry_window(as_of: pd.Timestamp | None = None, use_cache: bool = True) -> pd.DataFrame:
+    """The standard 5-year commodity-market reference window (see
+    config.INDUSTRY_LOOKBACK_YEARS), sliced from pull_curve_long_history()
+    -- no extra network cost, just filters the already-cached full pull.
+
+    Same fixed-identity caveat as pull_curve_long_history(), scoped down:
+    5 years back, these same 6 contracts were still several years from
+    delivery, so the earliest part of this window is still noticeably
+    flatter than a true regime signal would show. Read the recent portion
+    (last ~1-2 years) as the reliable part; treat years 3-5 as directional
+    price-level context, not a precise regime read.
+    """
+    full = pull_curve_long_history(as_of, use_cache=use_cache)
+    if as_of is None:
+        as_of = pd.Timestamp.today().normalize()
+    else:
+        as_of = pd.Timestamp(as_of)
+    cutoff = as_of - pd.DateOffset(years=INDUSTRY_LOOKBACK_YEARS)
+    return full[full.index >= cutoff]
 
 
 def pull_generic_curve(as_of: pd.Timestamp | None = None) -> pd.DataFrame:
