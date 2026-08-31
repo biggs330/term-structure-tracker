@@ -78,16 +78,18 @@ src/term_structure/
     notify.py       # post chart/animation/label to Discord #journalclub
 data/
     raw/            # reserved, currently unused
-    processed/      # pull_curve()'s parquet cache, one file per as_of date, gitignored
+    processed/      # parquet caches for all three pull_curve* functions, gitignored
 outputs/            # regime_chart.png, curve_animation.gif, label.txt, gitignored
 notebooks/          # phase0_spike.py -- disposable yfinance validation script
 tests/
     test_data.py    # roll-date / expiry / contract_symbols logic
     test_metrics.py # slope / roll yield / regime math
-pull_test.py        # standalone: just pull and print the curve
-metrics_test.py     # standalone: pull + print slope/roll yield/regime
-post_to_discord.py  # standalone: post the latest outputs to Discord (run manually)
-.env.example        # template for the required DISCORD_WEBHOOK_URL
+pull_test.py                  # standalone: just pull and print the curve
+pull_long_history_test.py     # standalone: pull ~8yr history, one batched call
+pull_industry_window_test.py  # standalone: pull the standard 5yr reference window
+metrics_test.py                # standalone: pull + print slope/roll yield/regime
+post_to_discord.py             # standalone: post the latest outputs to Discord (run manually)
+.env.example                    # template for the required DISCORD_WEBHOOK_URL
 ```
 
 ## Setup
@@ -115,6 +117,26 @@ python pull_test.py
 python metrics_test.py
 ```
 
+**Full available history (~8 years) for today's front-6 contracts**, one
+batched multi-ticker call instead of six separate ones. Caveat: early years
+reflect these same contracts when they were deeply deferred from delivery,
+so spreads are naturally flat and not a meaningful regime signal that far
+back -- useful for eyeballing long-run price levels only. See
+`data.pull_curve_long_history()` docstring.
+```bash
+python pull_long_history_test.py
+```
+
+**Standard 5-year commodity-market reference window** -- the conventional
+lookback used in industry range/average charts (EIA's "5-year range" bands,
+typical desk chart presets). Sliced from the long-history pull above, no
+extra network cost. Caveat: the earliest ~3-4 years of this window are
+still fixed-identity distorted (see Known Limitations) -- treat the recent
+~1-2 years as reliable and the rest as directional price-level context.
+```bash
+python pull_industry_window_test.py
+```
+
 **Post the latest outputs to Discord** (requires `DISCORD_WEBHOOK_URL` set
 in a local `.env` file — copy `.env.example` and fill in your real webhook
 URL from Discord's Server Settings -> Integrations -> Webhooks). This is
@@ -139,6 +161,7 @@ Everything tunable lives in `src/term_structure/config.py`:
 |---|---|---|
 | `N_CONTRACTS` | How many contracts make up the curve | Default 6 (CL1..CL6). Changing this changes column names everywhere and `roll_yield()`'s full-curve month divisor (`N_CONTRACTS - 1`) -- both update automatically. |
 | `LOOKBACK_DAYS` | How far back `pull_curve()` pulls history | Default 365. Larger values mean more data per pull (slower, more yfinance calls) but don't fix the historical-accuracy issue described in Known Limitations -- that's a data-availability wall, not a lookback setting. |
+| `INDUSTRY_LOOKBACK_YEARS` | How far back `pull_curve_industry_window()` slices | Default 5, the standard commodity-market reference window. Purely a slice of the already-pulled long-history data -- changing it doesn't trigger a new network call. |
 | `MONTH_CODES` | CL contract month-letter mapping | Standard futures month codes (F=Jan .. Z=Dec). Don't change -- this is a fixed industry convention, not a tunable. |
 | `DATA_PROCESSED` / `OUTPUTS` | Where cache files / chart-animation-label outputs get written | Change if you want a different folder layout. |
 

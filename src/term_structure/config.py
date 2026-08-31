@@ -19,3 +19,9 @@ MONTH_CODES = {
 }
 
 LOOKBACK_DAYS = 365
+
+# 5 years is the standard commodity-market reference window (EIA's "5-year
+# average/range" band charts, typical desk/terminal curve-history presets).
+# Used by pull_curve_industry_window() -- not a full backtest window, just
+# the conventional "how does this compare to the recent-normal range" view.
+INDUSTRY_LOOKBACK_YEARS = 5

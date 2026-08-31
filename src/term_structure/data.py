@@ -15,7 +15,13 @@ from pathlib import Path
 import pandas as pd
 import yfinance as yf
 
-from .config import DATA_PROCESSED, LOOKBACK_DAYS, MONTH_CODES, N_CONTRACTS
+from .config import (
+    DATA_PROCESSED,
+    INDUSTRY_LOOKBACK_YEARS,
+    LOOKBACK_DAYS,
+    MONTH_CODES,
+    N_CONTRACTS,
+)
 
 
 def _expiry(year: int, month: int) -> pd.Timestamp:
@@ -126,6 +132,81 @@ def pull_curve(as_of: pd.Timestamp | None = None, use_cache: bool = True) -> pd.
         curve.to_parquet(cache_path)
 
     return curve
+
+
+def pull_curve_long_history(as_of: pd.Timestamp | None = None, use_cache: bool = True) -> pd.DataFrame:
+    """Full available history for today's front-6 contracts, batched in one
+    call instead of 6 separate ones (faster, and Yahoo happens to retain a
+    currently-listed contract's full history back to when it was first
+    listed -- often ~8 years, far more than LOOKBACK_DAYS).
+
+    Same fixed-identity limitation as pull_curve(), but far more pronounced:
+    the early years reflect these same 6 contracts when they were extremely
+    deep-deferred (years from delivery), so spreads are naturally flat and
+    NOT a meaningful contango/backwardation signal that far back. Useful for
+    eyeballing long-run price levels; not a substitute for real historical
+    regime data. See README "Known Limitations".
+    """
+    if as_of is None:
+        as_of = pd.Timestamp.today().normalize()
+    else:
+        as_of = pd.Timestamp(as_of)
+
+    cache_path = DATA_PROCESSED / f"curve_long_{as_of.date()}.parquet"
+    if use_cache and cache_path.exists():
+        return pd.read_parquet(cache_path)
+
+    symbols = contract_symbols(as_of, N_CONTRACTS)
+    df = yf.download(symbols, period="max", progress=False, group_by="ticker")
+
+    series = {}
+    missing = []
+    for i, symbol in enumerate(symbols, start=1):
+        if symbol not in df.columns.get_level_values(0):
+            missing.append(symbol)
+            continue
+        close = df[symbol]["Close"].dropna()
+        if close.empty:
+            missing.append(symbol)
+            continue
+        series[f"CL{i}"] = close
+
+    if missing:
+        raise RuntimeError(
+            f"pull_curve_long_history(as_of={as_of.date()}) failed: "
+            f"{missing} returned no data."
+        )
+
+    curve = pd.DataFrame(series)
+    curve.index.name = "date"
+    curve = curve.dropna(how="any")
+
+    if use_cache:
+        DATA_PROCESSED.mkdir(parents=True, exist_ok=True)
+        curve.to_parquet(cache_path)
+
+    return curve
+
+
+def pull_curve_industry_window(as_of: pd.Timestamp | None = None, use_cache: bool = True) -> pd.DataFrame:
+    """The standard 5-year commodity-market reference window (see
+    config.INDUSTRY_LOOKBACK_YEARS), sliced from pull_curve_long_history()
+    -- no extra network cost, just filters the already-cached full pull.
+
+    Same fixed-identity caveat as pull_curve_long_history(), scoped down:
+    5 years back, these same 6 contracts were still several years from
+    delivery, so the earliest part of this window is still noticeably
+    flatter than a true regime signal would show. Read the recent portion
+    (last ~1-2 years) as the reliable part; treat years 3-5 as directional
+    price-level context, not a precise regime read.
+    """
+    full = pull_curve_long_history(as_of, use_cache=use_cache)
+    if as_of is None:
+        as_of = pd.Timestamp.today().normalize()
+    else:
+        as_of = pd.Timestamp(as_of)
+    cutoff = as_of - pd.DateOffset(years=INDUSTRY_LOOKBACK_YEARS)
+    return full[full.index >= cutoff]
 
 
 def pull_generic_curve(as_of: pd.Timestamp | None = None) -> pd.DataFrame:
