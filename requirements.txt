@@ -1,0 +1,9 @@
+yfinance
+pandas
+pyarrow
+numpy
+matplotlib
+plotly
+python-dotenv
+requests
+pytest
