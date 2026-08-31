@@ -87,6 +87,10 @@ tests/
 pull_test.py                  # standalone: just pull and print the curve
 pull_long_history_test.py     # standalone: pull ~8yr history, one batched call
 pull_industry_window_test.py  # standalone: pull the standard 5yr reference window
+monthly_table_1y_test.py      # standalone: monthly table over the 1yr window
+monthly_table_5y_test.py      # standalone: monthly table over the 5yr window
+monthly_table_8y_test.py      # standalone: monthly table over the ~8yr window
+rolling_trend_test.py          # standalone: rolling/smoothed slope+regime, short-term trend
 metrics_test.py                # standalone: pull + print slope/roll yield/regime
 post_to_discord.py             # standalone: post the latest outputs to Discord (run manually)
 .env.example                    # template for the required DISCORD_WEBHOOK_URL
@@ -137,6 +141,28 @@ still fixed-identity distorted (see Known Limitations) -- treat the recent
 python pull_industry_window_test.py
 ```
 
+**Monthly data tables** -- one row per calendar month (month-end CL1..CL6,
+slope, roll yield, regime recomputed on the month-end prices), over each of
+the three windows above. Same caveats as their underlying pull apply to
+each -- the 1-year table is the most reliable, the 8-year table the least:
+```bash
+python monthly_table_1y_test.py   # 12 rows
+python monthly_table_5y_test.py   # 61 rows
+python monthly_table_8y_test.py   # 94 rows
+```
+
+**Rolling/smoothed slope and regime** -- a moving average of daily slope
+(default 5-day window) instead of the raw day-to-day value. Raw slope
+flips sign on single-day noise when the curve is near flat (see
+Interpretation section: the choppy Sep-Dec 2025 stretch), which is real
+but not always a meaningful trend change. Smoothing damps that noise while
+staying far more responsive than the monthly table -- confirmed on real
+data: cuts flip count from 20 to 8 over the 1-year window, all the
+smoothed-away flips concentrated in the already-diagnosed choppy stretch.
+```bash
+python rolling_trend_test.py
+```
+
 **Post the latest outputs to Discord** (requires `DISCORD_WEBHOOK_URL` set
 in a local `.env` file — copy `.env.example` and fill in your real webhook
 URL from Discord's Server Settings -> Integrations -> Webhooks). This is
@@ -174,6 +200,9 @@ Everything tunable lives in `src/term_structure/config.py`:
   want a third read.
 - `viz.REGIME_COLORS` -- the contango/backwardation shading colors on the
   static chart.
+- `metrics.rolling_slope(curve, window=5)` / `rolling_regime()` -- `window`
+  controls the smoothing period in trading days. Smaller = more responsive
+  but noisier, larger = smoother but slower to react to real changes.
 
 ## Backtesting / Running Against a Different Date
 
